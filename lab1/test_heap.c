@@ -1,5 +1,9 @@
 /* Copyright 2014 Peter Goodman, all rights reserved. */
 
+#undef calloc
+#undef free
+#undef mmap
+
 #include "test_clock.h"
 #include "test_heap.h"
 
@@ -25,7 +29,7 @@ extern int myfree(void *ptr);
 
 static void UpdateHistogram(struct Histogram *hist, size_t val) {
   size_t max_bit = 63 - __builtin_clzll(val);
-  assert(max_bit < 32);
+  assert(max_bit < 64);
   hist->count[max_bit] += 1;
   ++hist->total_count;
   hist->sum += val;
@@ -86,7 +90,7 @@ static int DetectOverflow(char *base, char *limit, int val_) {
 
 // (Re-)Initialize the heap for a given heap size.
 struct Heap *AllocHeap(size_t num_bytes, ConfigFunc *config) {
-  struct Heap *heap = calloc(sizeof(struct Heap), 1);
+  struct Heap *heap = calloc(1UL, sizeof(struct Heap));
   pthread_mutex_init(&(heap->sbrk_mutex), NULL);
 
   heap->num_bytes = num_bytes;
@@ -242,7 +246,7 @@ void *Malloc(struct Heap *heap, size_t size) {
 
   UpdateHistogram(&(heap->stats.malloc_calls), size);
 
-  if (addr) {
+  if (IsHeapAddress(heap, addr)) {
     if (heap->options.malloc_poison_val) {
       memset(addr, heap->options.malloc_poison_val, size);
     }
@@ -259,7 +263,7 @@ void *Malloc(struct Heap *heap, size_t size) {
 // *before* `myfree` is invoked.
 enum FreeStatus Free(struct Heap *heap, void *addr, size_t size) {
   int ret = 0;
-  if (addr) {
+  if (IsHeapAddress(heap, addr)) {
     if (heap->options.free_poison_val) {
       memset(addr, heap->options.free_poison_val, size);
     }

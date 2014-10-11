@@ -1,7 +1,9 @@
 /* Copyright 2014 Peter Goodman, all rights reserved. */
 
 #include <errno.h>
+#include <execinfo.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -32,10 +34,29 @@ void *DoSbrk(intptr_t size) {
 
 // Stub for mmap.
 void *DoMmap(void *x, ...) {
-  printf("BAD: Program used `mmap` instead of `sbrk`.\n");
+  printf("BAD: Program used libc `mmap` instead of `sbrk`.\n");
   errno = ENOMEM;
   (void) x;
   return (void *) -1;
+}
+
+void *DoMalloc(size_t size) {
+  printf("BAD: Program used libc `malloc`.\n");
+  errno = ENOMEM;
+  (void) size;
+  return NULL;
+}
+
+void *DoCalloc(size_t num, size_t size) {
+  printf("BAD: Program used libc `calloc`.\n");
+  errno = ENOMEM;
+  (void) num; (void) size;
+  return NULL;
+}
+
+void DoFree(void *ptr) {
+  printf("BAD: Program used libc `free`.\n");
+  (void) ptr;
 }
 
 // Simple configuration of the heap. No debugging performed.
@@ -70,12 +91,49 @@ static void LoadTraceFile(const char *file_name) {
   fclose(trace_file);
 }
 
+// Handle timeouts.
+static void Timeout(int sig) {
+  printf("BAD: Program hung. 1 second timeout exceeded.\n");
+  exit(EXIT_FAILURE);
+}
+
+// Show a stack trace on a SIGSEGV or a SIGABRT.
+//
+// From: http://www.emoticode.net/c/custom-sigsegv-handler-with-backtrace-reporting.html
+static void DumpStack(int sig) {
+  void *trace[32];
+  size_t size, i;
+  char **strings;
+
+  if (SIGSEGV == sig) {
+    printf("\n********* SEGMENTATION FAULT *********\n\n");
+  } else if (SIGABRT == sig) {
+    printf("\n********* ASSERTION FAILURE **********\n\n");
+  }
+
+  size = backtrace(trace, 32);
+  strings = backtrace_symbols(trace, size);
+
+  printf("\nBACKTRACE:\n\n");
+  for (i = 0; i < size; i++) {
+    printf("  %s\n", strings[i]);
+  }
+
+  printf("\n***************************************\n");
+
+  exit(EXIT_FAILURE);
+}
+
 // Runs an experiment.
 int main(int argc, const char *argv[]) {
   int tid = 0;
   int num_threads = 0;
   double total, count;
 
+  // Catch timeouts and faults.
+  signal(SIGALRM, Timeout);
+  signal(SIGSEGV, DumpStack);
+  signal(SIGABRT, DumpStack);
   alarm(1);
 
   memset(&trace_threads, 0, sizeof trace_threads);
@@ -100,7 +158,8 @@ int main(int argc, const char *argv[]) {
   for (tid = 0; tid < num_threads; ++tid) {
     trace_threads[tid].heap = heap;
     trace_threads[tid].id = tid;
-    pthread_create(&(threads[tid]), NULL, ExecuteTraces, &(trace_threads[tid]));
+    pthread_create(&(threads[tid]), NULL, (void *(*)(void *)) ExecuteTraces,
+                   &(trace_threads[tid]));
   }
 
   for (tid = 0; tid < num_threads; ++tid) {

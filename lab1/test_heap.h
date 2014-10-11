@@ -17,7 +17,7 @@ struct Histogram {
   size_t sum;
 
   // Counts the number of inputs for each power of two.
-  int count[32];
+  int count[64];
 };
 
 // Defines the heap used to test CSC 369 lab 1, phase 1 and phase 2.

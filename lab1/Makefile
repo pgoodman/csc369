@@ -1,8 +1,9 @@
 
 CC = gcc
 CXX = g++ -std=c++11
-CC_EXTRA_FLAGS = -O0 -g3  -Wall
+CC_EXTRA_FLAGS = -O0 -g3 -Wall
 CC_ERR_FLAGS = -Wno-format
+MACRO_FLAGS = -Dmalloc=DoMalloc -Dcalloc=DoCalloc -Dfree=DoFree -Dsbrk=DoSbrk -Dmmap=DoMmap
 CC_FLAGS = -I./ $(CC_ERR_FLAGS) $(CC_EXTRA_FLAGS)
 
 CC_FILES = $(wildcard *.c)
@@ -12,11 +13,11 @@ CXX_FILES = $(wildcard *.cc)
 %.o :: %.c
 	@echo "Building C object $@"
 	@mkdir -p $(@D)
-	@$(CC) $(CC_FLAGS) -Dsbrk=DoSbrk -c $< -o $@
+	@$(CC) $(CC_FLAGS) $(MACRO_FLAGS) -c $< -o $@
 
 # Compile C++ files to object files.
 %.o :: %.cc
-	@echo "Building C object $@"
+	@echo "Building CXX object $@"
 	@mkdir -p $(@D)
 	@$(CXX) $(CC_FLAGS) -Dsbrk=DoSbrk -c $< -o $@
 

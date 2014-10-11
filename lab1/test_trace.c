@@ -73,24 +73,32 @@ void *ExecuteTraces(struct TraceThread *thread) {
   struct Heap *heap = thread->heap;
   int i = 0;
   for (; i < MAX_NUM_EVENTS; ++i) {
+    assert(0 <= thread->id && thread->id < MAX_NUM_THREADS);
+
     struct TraceEntry *entry = &(entries[i]);
     switch (entry->action) {
       case ACTION_END:
         goto done;
       case ACTION_MALLOC:
-        entry->malloc.address = Malloc(heap,
-                                       (size_t) entry->malloc.malloc_size);
+        entry->malloc.address = Malloc(
+            heap, (size_t) entry->malloc.malloc_size);
         if (!IsHeapAddress(heap, entry->malloc.address)) {
           printf(
               "BAD: Thread %d returned a bad pointer (%p) for malloc id %d "
-              "of size %d. Trace line %d.\n", thread->id, entry->malloc.address,
-              i, entry->malloc.malloc_size, entry->line);
+              "of size %d. Trace line %d.\n", thread->id,
+              entry->malloc.address, i, entry->malloc.malloc_size,
+              entry->line);
         }
         thread->num_mallocs += 1.0;
         thread->total_malloc_time += GetElapsedTime();
         break;
       case ACTION_FREE: {
         struct TraceEntry *malloc = &(entries[entry->free.malloc_index]);
+
+        if (!IsHeapAddress(heap, malloc->malloc.address)) {
+          entry->free.expect_error = 1;
+        }
+
         if (entry->free.expect_error) {
           printf(
               "NOTE: Expecting free in thread %d of malloc id %d to fail. "
