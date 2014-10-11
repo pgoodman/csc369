@@ -1,10 +1,12 @@
 /* Copyright 2014 Peter Goodman, all rights reserved. */
 
+#include "test_clock.h"
 #include "test_heap.h"
 
 #include <assert.h>
 #include <errno.h>
 #include <math.h>
+#include <pthread.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -232,7 +234,11 @@ out:
 
 // Tell the heap that a malloc has been done.
 void *Malloc(struct Heap *heap, size_t size) {
-  void *addr = mymalloc(size);
+  void *addr = NULL;
+
+  StartClock();
+  addr = mymalloc(size);
+  EndClock();
 
   UpdateHistogram(&(heap->stats.malloc_calls), size);
 
@@ -252,13 +258,19 @@ void *Malloc(struct Heap *heap, size_t size) {
 // Tell the heap that a free is *about* to be done. This should be executed
 // *before* `myfree` is invoked.
 enum FreeStatus Free(struct Heap *heap, void *addr, size_t size) {
+  int ret = 0;
   if (addr) {
     if (heap->options.free_poison_val) {
       memset(addr, heap->options.free_poison_val, size);
     }
     __sync_fetch_and_sub(&(heap->stats.allocated_memory), size);
   }
-  if (myfree(addr)) {
+
+  StartClock();
+  ret = myfree(addr);
+  EndClock();
+
+  if (ret) {
     if (addr) {
       __sync_fetch_and_add(&(heap->traps.num_failed_frees), 1);
       return FREE_UNKNOWN_FAIL;
@@ -302,7 +314,8 @@ void FreeFail(struct Heap *heap, void *addr, size_t size) {
 }
 
 // Returns `1` if `addr` is in the heap, otherwise `0`.
-int IsHeapAddress(struct Heap *heap, void *addr) {
+int IsHeapAddress(struct Heap *heap, void *addr_) {
+  const char *addr = (const char *) addr_;
   return heap->base <= addr && addr < heap->limit;
 }
 
@@ -341,6 +354,7 @@ static void FineGrainedUtilization(struct Heap *heap) {
 // Produce a report about the heap.
 void Report(struct Heap *heap) {
   double a, b;
+  ptrdiff_t sbrk_size = heap->sbrk - heap->base;
   if (heap->traps.bug_write_beyond_sbrk) {
     printf("BAD: Detected an overflow of the system break pointer.\n");
   }
@@ -365,8 +379,6 @@ void Report(struct Heap *heap) {
            heap->traps.num_failed_frees);
   }
 
-  printf("\n\n\n");
-
   DisplayHistogram(&(heap->stats.malloc_calls),
                    "Calls to `mymalloc` (log2 scale):");
   DisplayHistogram(&(heap->stats.sbrk_calls_positive),
@@ -377,20 +389,22 @@ void Report(struct Heap *heap) {
   printf("Number of calls to `sbrk(0)`: %d\n",
          heap->stats.num_sbrk_calls_zero);
 
-  printf("Sum of `mymalloc`s + `myfree`s: %lu\n",
-         heap->stats.allocated_memory);
+  printf("Sum of `mymalloc`s + `myfree`s: %lu bytes (%ld pages)\n",
+         heap->stats.allocated_memory,
+         heap->stats.allocated_memory / PAGE_SIZE);
 
-  printf ("Size of the system break: %ld\n",
-          heap->sbrk - heap->base);
+  printf ("Size of the system break: %ld bytes (%ld pages).\n",
+          sbrk_size, ROUND_UP((size_t)sbrk_size, PAGE_SIZE) / PAGE_SIZE);
 
-  printf("Sum of `mymalloc`s: %lu\n",
-         heap->stats.total_allocated_memory);
+  printf("Sum of `mymalloc`s: %lu bytes (%lu pages).\n",
+         heap->stats.total_allocated_memory,
+         heap->stats.total_allocated_memory / PAGE_SIZE);
 
-  printf ("Maximum size of the system break: %lu\n",
-          heap->usable_num_bytes);
+  printf ("Maximum size of the system break: %lu bytes (%ld pages).\n",
+          heap->usable_num_bytes, heap->usable_num_bytes / PAGE_SIZE);
 
-  a = (double) heap->stats.total_allocated_memory;
-  b = (double) (heap->sbrk - heap->base);
+  a = (double) heap->stats.allocated_memory;
+  b = (double) sbrk_size;
   printf("Watermark memory utilization: %d%%\n", (int) rint((a / b) * 100.0));
 
   if (heap->options.init_poison_val) {

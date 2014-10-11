@@ -36,6 +36,10 @@ struct TraceEntry {
 struct TraceThread {
   struct Heap *heap;
   int id;
+  double total_malloc_time;
+  double total_free_time;
+  double num_mallocs;
+  double num_frees;
 };
 
 void ParseTraceLine(const char *line, int line_num);

@@ -1,17 +1,22 @@
 /* Copyright 2014 Peter Goodman, all rights reserved. */
 
 #include <errno.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <pthread.h>
+#include <string.h>
 
 #include "test_heap.h"
 #include "test_trace.h"
 
 // Mutex that can be used by course code.
 pthread_mutex_t mywait;
-pthread_t threads[MAX_NUM_THREADS];
-struct TraceThread trace_threads[MAX_NUM_THREADS];
+void *start_heap = NULL;
+void *max_heap = 0;
+
+// Manages trace threads.
+static pthread_t threads[MAX_NUM_THREADS];
+static struct TraceThread trace_threads[MAX_NUM_THREADS];
 
 // Heap used by `mem_sbrk`.
 static struct Heap *heap;
@@ -20,19 +25,17 @@ static struct Heap *heap;
 extern int myinit(void) __attribute__((weak));
 
 // Stub for the system `sbrk` that re-routes everything through `heap`.
-void *mem_sbrk(intptr_t size) {
+void *DoSbrk(intptr_t size) {
   return ShiftBreak(heap, size);
 }
 
 // Stub for mmap.
-void *mem_mmap(void *x, ...) {
+void *DoMmap(void *x, ...) {
   printf("BAD: Program used `mmap` instead of `sbrk`.\n");
   errno = ENOMEM;
   (void) x;
   return (void *) -1;
 }
-
-// TODO(pag): Implement mmap?
 
 // Simple configuration of the heap. No debugging performed.
 static void ConfigSimple(struct HeapOptions *options) {
@@ -70,6 +73,10 @@ static void LoadTraceFile(const char *file_name) {
 int main(int argc, const char *argv[]) {
   int tid = 0;
   int num_threads = 0;
+  double total, count;
+
+  memset(&trace_threads, 0, sizeof trace_threads);
+  memset(&threads, 0, sizeof threads);
 
   if (2 != argc) {
     fprintf(stderr, "Usage: %s trace_file\n", argv[0]);
@@ -80,20 +87,46 @@ int main(int argc, const char *argv[]) {
   pthread_mutex_init(&mywait, NULL);
   LoadTraceFile(argv[1]);
   heap = AllocHeap(33546240 /* 32 MiB - 2 redzone pages */, ConfigSimple);
+  start_heap = heap->sbrk;
+
+  printf("Trace Output ================================================\n\n");
+
   if (myinit) myinit();
 
   num_threads = NumThreads();
-  for (tid = 0; tid < num_threads; tid++) {
+  for (tid = 0; tid < num_threads; ++tid) {
     trace_threads[tid].heap = heap;
     trace_threads[tid].id = tid;
     pthread_create(&(threads[tid]), NULL, ExecuteTraces, &(trace_threads[tid]));
   }
 
-  for (tid = 0; tid < num_threads; tid++) {
+  for (tid = 0; tid < num_threads; ++tid) {
     pthread_join(threads[tid], NULL);
   }
 
+  printf("\n\n");
+
+  printf("Memory Report ===============================================\n\n");
   Report(heap);
+  printf("\n\n");
+  printf("Time Report =================================================\n\n");
+  total = 0.0;
+  count = 0.0;
+  for (tid = 0; tid < num_threads; ++tid) {
+    total += trace_threads[tid].total_malloc_time;
+    count += trace_threads[tid].num_mallocs;
+  }
+  printf("Total time spent on `mymalloc`: %lfs.\n", total);
+  printf("Average `mymalloc` time: %lfs.\n", total / count);
+
+  total = 0.0;
+  count = 0.0;
+  for (tid = 0; tid < num_threads; ++tid) {
+    total += trace_threads[tid].total_free_time;
+    count += trace_threads[tid].num_frees;
+  }
+  printf("Total time spent on `myfree`: %lfs.\n", total);
+  printf("Average `myfree` time: %lfs.\n", total / count);
 
   // Teardown.
   FreeHeap(heap);

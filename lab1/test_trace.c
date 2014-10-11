@@ -1,5 +1,6 @@
 /* Copyright 2014 Peter Goodman, all rights reserved. */
 
+#include "test_clock.h"
 #include "test_trace.h"
 
 #include <assert.h>
@@ -85,7 +86,8 @@ void *ExecuteTraces(struct TraceThread *thread) {
               "of size %d. Trace line %d.\n", thread->id, entry->malloc.address,
               i, entry->malloc.malloc_size, entry->line);
         }
-
+        thread->num_mallocs += 1.0;
+        thread->total_malloc_time += GetElapsedTime();
         break;
       case ACTION_FREE: {
         struct TraceEntry *malloc = &(entries[entry->free.malloc_index]);
@@ -106,6 +108,8 @@ void *ExecuteTraces(struct TraceThread *thread) {
                 malloc->malloc.address, entry->line);
           }
         }
+        thread->num_frees += 1.0;
+        thread->total_free_time += GetElapsedTime();
         break;
       }
       case ACTION_FREE_NULL:
