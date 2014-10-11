@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "test_heap.h"
 #include "test_trace.h"
@@ -74,6 +75,8 @@ int main(int argc, const char *argv[]) {
   int tid = 0;
   int num_threads = 0;
   double total, count;
+
+  alarm(1);
 
   memset(&trace_threads, 0, sizeof trace_threads);
   memset(&threads, 0, sizeof threads);
