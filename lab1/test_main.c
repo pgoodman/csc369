@@ -91,37 +91,9 @@ static void LoadTraceFile(const char *file_name) {
   fclose(trace_file);
 }
 
-// Handle timeouts.
-static void Timeout(int sig) {
-  printf("BAD: Program hung. 1 second timeout exceeded.\n");
-  exit(EXIT_FAILURE);
-}
-
-// Show a stack trace on a SIGSEGV or a SIGABRT.
-//
-// From: http://www.emoticode.net/c/custom-sigsegv-handler-with-backtrace-reporting.html
+// Called when a bad signal happens. GDB has a breakpoint on this function.
 static void DumpStack(int sig) {
-  void *trace[32];
-  size_t size, i;
-  char **strings;
-
-  if (SIGSEGV == sig) {
-    printf("\n********* SEGMENTATION FAULT *********\n\n");
-  } else if (SIGABRT == sig) {
-    printf("\n********* ASSERTION FAILURE **********\n\n");
-  }
-
-  size = backtrace(trace, 32);
-  strings = backtrace_symbols(trace, size);
-
-  printf("\nBACKTRACE:\n\n");
-  for (i = 0; i < size; i++) {
-    printf("  %s\n", strings[i]);
-  }
-
-  printf("\n***************************************\n");
-
-  exit(EXIT_FAILURE);
+  (void) sig;
 }
 
 // Runs an experiment.
@@ -131,7 +103,7 @@ int main(int argc, const char *argv[]) {
   double total, count;
 
   // Catch timeouts and faults.
-  signal(SIGALRM, Timeout);
+  signal(SIGALRM, DumpStack);
   signal(SIGSEGV, DumpStack);
   signal(SIGABRT, DumpStack);
   alarm(1);

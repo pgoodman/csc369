@@ -12,6 +12,7 @@ handle SIGALRM print nostop pass
 # in GDB that will tell GDB to dump all thread stacks then quit.
 b DumpStack
 commands
+f 2
 thread apply all bt
 q
 end
